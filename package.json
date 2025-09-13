@@ -1,0 +1,17 @@
+{
+  "name": "backend-test",
+  "version": "1.0.0",
+  "description": "Learning backend with express mongodb",
+  "keywords": [
+    "backend",
+    "javascript",
+    "chai"
+  ],
+  "license": "ISC",
+  "author": "Sahidur Miah",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
