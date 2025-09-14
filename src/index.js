@@ -5,7 +5,7 @@ import connect_db from "./db/index_db.js";
 import { app } from "./app.js";
 import { PORT } from "./constants.js";
 
-dotenv.config({ path: "./env" }); // load .env variables
+dotenv.config({ path: "./.env" }); // load .env variables
 const port = PORT || 8000;
 
 // Connect to MongoDB

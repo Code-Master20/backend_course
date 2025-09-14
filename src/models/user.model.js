@@ -47,8 +47,8 @@ const userSchema = new Schema(
     password: {
       type: String,
       required: [true, "Password is required"],
-      min: [5, "must be atleast 5 char"],
-      max: [13, "must not exceed 13 char"],
+      // min: [5, "must be atleast 5 char"],
+      // max: [13, "must not exceed 13 char"],
     },
 
     refreshToken: {
