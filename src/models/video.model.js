@@ -47,6 +47,8 @@ const videoSchema = new Schema(
   }
 );
 
+//With this plugin → you get results + pagination info (page, total, nextPage, prevPage, etc.) automatically.
+//here we are just adding our custom-plugin --> mongooseAggregatePaginate
 videoSchema.plugin(mongooseAggregatePaginate);
 
 export const Video = model("Video", videoSchema);
