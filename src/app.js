@@ -43,4 +43,11 @@ app.use(express.static("public"));
 //Common uses:(1)Keep a user logged in (authentication) (2)Track user preferences (3)Store session IDs
 app.use(cookieParser());
 
+//routes import
+import userRouter from "./routes/user.routes.js";
+
+//routes declaration
+app.use("/api/v1/users", userRouter);
+//http://localhost:5000/api/v1/users/register
+
 export { app };
