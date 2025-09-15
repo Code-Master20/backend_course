@@ -17,7 +17,7 @@ const registerUser = asyncHandler(async (req, res, next) => {
 
   //if data coming from form-submissin and json, we extract from req.body. if from url we will see it later
   const { fullName, userName, userEmail, password } = req.body;
-  console.log(`userEmail: ${userEmail}`);
+  // console.log(`userEmail: ${userEmail}`);
 
   if (
     [fullName, userEmail, userName, password].some(
@@ -36,8 +36,19 @@ const registerUser = asyncHandler(async (req, res, next) => {
     throw new ApiError(409, "User with this email and username already exists");
   }
 
+  // console.log(req.body);
+
   const avatarLocalPath = req.files?.avatar[0]?.path;
-  const coverImageLocalPath = req.files?.coverImage[0]?.path;
+  // const coverImageLocalPath = req.files?.coverImage[0]?.path;
+
+  let coverImageLocalPath;
+  if (
+    req.files &&
+    Array.isArray(req.files.coverImage) &&
+    req.files.coverImage.length > 0
+  ) {
+    coverImageLocalPath = req.files.coverImage[0].path;
+  }
 
   if (!avatarLocalPath) throw new ApiError(400, "Avatar file is required");
   const avatar = await uploadOnCloudinary(avatarLocalPath);
