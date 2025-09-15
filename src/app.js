@@ -41,7 +41,7 @@ app.use(express.static("public"));
 //cookie-parser is a middleware in Express that helps your server read and handle cookies sent by clients (usually browsers)
 //A cookie is a small piece of data stored in the user's browser.
 //Common uses:(1)Keep a user logged in (authentication) (2)Track user preferences (3)Store session IDs
-app.use(cookieParser());
+app.use(cookieParser()); //this insure cookie now can be accessible with req.cookie and res.cookie
 
 //routes import
 import userRouter from "./routes/user.routes.js";
