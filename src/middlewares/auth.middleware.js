@@ -8,11 +8,11 @@ import jwt from "jsonwebtoken";
 
 export const verifyJWT = asyncHandler(async (req, _, next) => {
   //mobile senerio req.cookies.accessToken is not possible, try req.header()
+  console.log(req.cookies); //{ accessToken: {}, refreshToken: {} }
   try {
     const token =
       req.cookies?.accessToken ||
       req.header("Authorization")?.replace("Bearer ", ""); //if request from mobile-app, in header: key="Authorization" value="Bearer <token>". so we are replacing Bearer and empty-space with empty string and receiving only token from the key(Authorization)
-
     if (!token) throw new ApiError(401, "Unauthorized Request");
 
     //token will be verified by process.env.ACCESS_TOKEN_SECRET
@@ -30,6 +30,7 @@ export const verifyJWT = asyncHandler(async (req, _, next) => {
     req.user = user;
     next();
   } catch (error) {
+    console.log(error);
     throw new ApiError(401, error?.message || "Invalid Access Token");
   }
 });
