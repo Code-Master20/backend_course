@@ -242,7 +242,7 @@ const logoutUser = asyncHandler(async (req, res) => {
 });
 
 //define an end point where user can refresh his accessToken
-const refreshAccessToken = asyncHandler(async (req, res, next) => {
+const refreshAccessToken = asyncHandler(async (req, res) => {
   //for mobile app if refreshToken in req.body
   const incomingRefreshToken =
     req.cookies.refreshToken || req.body.refreshToken;
@@ -318,4 +318,226 @@ const refreshAccessToken = asyncHandler(async (req, res, next) => {
   }
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword, confirmedPassword } = req.body;
+
+  if (!(newPassword === confirmedPassword))
+    throw new ApiError(400, "newPassword and confirmPassword are not same", [
+      {
+        field: "new-confirm password not-match",
+        message:
+          "newPassword is not equal to confirmPassword, please re-check confirmPassword",
+      },
+    ]);
+
+  //as we used middle-ware (verifyJWT || auth.middleware.js) in route-handling for change-password, we have access to req.user, so we can directly find logged-in user using "req.user._id"
+  const user = await User.findById(req.user?._id);
+
+  const isPasswordCorrect = await user.isPasswordCorrect(confirmedPassword);
+
+  if (!isPasswordCorrect) {
+    throw new ApiError(400, "Invalid old password", [
+      {
+        field: "Invalid-Old-Password",
+        message: "Your Old Password Does not Match",
+      },
+    ]);
+  }
+
+  //at the time of this code run--> pre-save hook in user-model will trigger
+  user.password = confirmedPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, {}, `Your Password is changed: ${confirmedPassword}`)
+    );
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        req.user,
+        "Current LoggedIn User Fetched Successfully"
+      )
+    );
+});
+
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { userName, fullName, userEmail } = req.body;
+
+  if (!fullName && !userEmail && !userName) {
+    throw new ApiError(400, "All fields are required");
+  }
+
+  if (!fullName && userEmail && userName) {
+    throw new ApiError(
+      400,
+      "full name is required to update the existing fullName"
+    );
+  }
+
+  if (!userName && fullName && userEmail) {
+    throw new ApiError(
+      400,
+      "User name is required to update the existing userName"
+    );
+  }
+
+  if (!userEmail && fullName && userName) {
+    throw new ApiError(
+      400,
+      "user email is required to update the existing userEmail"
+    );
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: { fullName, userEmail, userName },
+    },
+    {
+      new: true,
+    }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
+});
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
+
+  if (!avatarLocalPath) throw new ApiError(400, "Avatar file is missing");
+
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+
+  if (!avatar.url)
+    throw new ApiError(400, "Error while uploading avatar on cloudinary");
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: { avatar: avatar.url },
+    },
+    {
+      new: true,
+    }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Avatar Image updated successfully"));
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+
+  if (!coverImageLocalPath) {
+    throw new ApiError(400, "Cover Image File Is Missing");
+  }
+
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+
+  if (!coverImage.url) {
+    throw new ApiError(400, "Error while uploading coverImage on cloudinary");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: { coverImage: coverImage.url },
+    },
+    { new: true }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "coverImage updated successfully"));
+});
+
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  //If we want to see a channel-profile, we usualy go to that channel url, so here we use params to get that chennel-profile's url
+  const { userName } = req.params;
+
+  if (!userName?.trim()) {
+    throw new ApiError(400, "userName is missing");
+  }
+
+  //Applying aggregate here || Remember:whatsoever value comes after aggregation, it is in array-formate
+  const channel = await User.aggregate([
+    {
+      $match: { userName: userName?.toLowerCase() },
+    },
+
+    //this defines how many subscribers an user has
+    {
+      $lookup: {
+        from: "subscriptions", //why here "subscriptions" but not "Subscription" because internally in model everything in lowercase and plural (subscriptionSchema)
+        localField: "_id", //here id from user-model
+        foreignField: "chennel", //see in subscriptionSchema
+        as: "subscribers", //this we define as we wish
+      },
+    },
+
+    //this defines how many users, an user did subscribed
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: " subscriber",
+        as: "subscribedTo",
+      },
+    },
+    //now the above two fields to be added "subscribers" and "subscribedTo" in userSchema-User
+    {
+      //this ($addFields) operator will add the above two fields in user-model (userSchema||user.model.js)
+      $addFields: {
+        subscribersCount: { $size: "$subscribers" }, //$size will count all subscribers
+        channelsSubscribedToCount: { $size: "$subscribedTo" },
+
+        //sending to frontend a value: true or false so that in frontend it could be tracked that an user subscribed another user if the user visits that user's profile
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.user?._id, "$subscribers.subscriber"] }, //here to check--> the document:"subscribers" user has, am i included here or not ||note--> $subscribers point at as:"subscribers" && subscriber point at subscriptionSchema->subscriber
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+
+    //The $project stage in MongoDB’s aggregation pipeline is used to reshape each document
+    {
+      $project: {
+        fullName: 1,
+        userName: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        userEmail: 1,
+        coverImage: 1,
+        createdAt: 1,
+      },
+    },
+  ]);
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccountDetails,
+  updateUserAvatar,
+  updateUserCoverImage,
+  getUserChannelProfile,
+};
