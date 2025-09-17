@@ -4,6 +4,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshToken = async (userId) => {
   try {
@@ -465,27 +466,32 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   //If we want to see a channel-profile, we usualy go to that channel url, so here we use params to get that chennel-profile's url
   const { userName } = req.params;
 
+  //if channel-profile does not exist
   if (!userName?.trim()) {
     throw new ApiError(400, "userName is missing");
   }
 
-  //Applying aggregate here || Remember:whatsoever value comes after aggregation, it is in array-formate
+  //discussion: we could use User.find(userName) to find the relative user-document and then apply aggregation on the basis of user._id, but we can directly apply aggregation pipeline because there is a method $match to find relative user. SEE BELOW
+
+  //Applying aggregate here || Remember:whatsoever value comes after aggregation, it is in an array-format
   const channel = await User.aggregate([
+    //first pipeline(aggregation stage)
     {
-      $match: { userName: userName?.toLowerCase() },
+      $match: { userName: userName?.toLowerCase() }, //one document is filtered here whose userName === userName(draged from req.params)
     },
 
-    //this defines how many subscribers an user has
+    //Now defined how many subscribers, that filtered-user has.
     {
       $lookup: {
-        from: "subscriptions", //why here "subscriptions" but not "Subscription" because internally in model everything in lowercase and plural (subscriptionSchema)
-        localField: "_id", //here id from user-model
+        //looking from subscriptionSchema
+        from: "subscriptions", //why here "subscriptions" but not "Subscription" because internally in model everything is in lowercase and plural (subscriptionSchema)
+        localField: "_id", //here id from filtered-user-document
         foreignField: "chennel", //see in subscriptionSchema
         as: "subscribers", //this we define as we wish
       },
     },
 
-    //this defines how many users, an user did subscribed
+    //now defined how many users, this filtered-user subscribed
     {
       $lookup: {
         from: "subscriptions",
@@ -494,25 +500,28 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         as: "subscribedTo",
       },
     },
-    //now the above two fields to be added "subscribers" and "subscribedTo" in userSchema-User
+
+    //now the above two fields to be added "subscribers" and "subscribedTo" in filtered-user (userSchema-User)
     {
       //this ($addFields) operator will add the above two fields in user-model (userSchema||user.model.js)
       $addFields: {
-        subscribersCount: { $size: "$subscribers" }, //$size will count all subscribers
+        subscribersCount: { $size: "$subscribers" }, //$size will count all subscribers // {$size: "$subscribers"} returns length of the array-$subscribers
         channelsSubscribedToCount: { $size: "$subscribedTo" },
 
         //sending to frontend a value: true or false so that in frontend it could be tracked that an user subscribed another user if the user visits that user's profile
         isSubscribed: {
           $cond: {
-            if: { $in: [req.user?._id, "$subscribers.subscriber"] }, //here to check--> the document:"subscribers" user has, am i included here or not ||note--> $subscribers point at as:"subscribers" && subscriber point at subscriptionSchema->subscriber
+            if: { $in: [req.user?._id, "$subscribers.subscriber"] }, //here to check--> the document:"subscribers" user has, is the url-visited user included here or not ||note--> $subscribers point at as:"subscribers" && subscriber point at subscriptionSchema->subscriber
             then: true,
             else: false,
           },
         },
-      },
+      }, //now user model is modified with new  additional fields (subscribersCount, channelsSubscribedToCount, isSubscribed, etc)
     },
 
     //The $project stage in MongoDB’s aggregation pipeline is used to reshape each document
+
+    //here we will reshape user-model || we will decide what fields to be included in user-model
     {
       $project: {
         fullName: 1,
@@ -527,6 +536,83 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
       },
     },
   ]);
+
+  if (!channel?.length) {
+    //Checks !channel?.length since aggregate returns an array (even empty).
+    throw new ApiError(404, "Channel does not exist");
+  }
+
+  //as one user has one channel so in channel-array there will be one element only, so we can return channel[0]-first element of the channel-array
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, channel[0], "User channel fetched successfully")
+    );
+});
+
+const getWatchHistory = asyncHandler(async (req, res) => {
+  //previously we did User.findById(req.user._id), behind the scene req.user._id converted into string by mongoDB and compare to ObjectId in mongoDB, but in aggregation req.user._id connot be converted into string so we use another approach
+  const user = await User.aggregate([
+    {
+      $match: { _id: new mongoose.Types.ObjectId(req.user._id) }, //user is filtered out with req.user._id
+    },
+
+    {
+      $lookup: {
+        from: "videos",
+        localField: "watchHistory",
+        foreignField: "_id",
+        as: "watchHistory",
+        //note:-now in watchHistory-field in user-model so many documents of video-model are stored
+
+        //now define sub-pipeline for stored documents of video-model to define owner of each video (each video document)
+        pipeline: [
+          {
+            //visited user currently in video-model-document. look-up from here to user-model
+            $lookup: {
+              from: "users",
+              localField: "owner",
+              foreignField: "_id",
+              as: "owner",
+
+              //the above code drag complete user-model in each video-document for owner-field and we do not want complete user-model in each video-document. see below for solutions
+              pipeline: [
+                //double sub-pipeline
+                {
+                  $project: {
+                    fullName: 1,
+                    userName: 1,
+                    avatar: 1,
+                  },
+                },
+              ],
+            },
+          },
+
+          //this stage will convert owner-array into object
+          {
+            $addFields: {
+              owner: {
+                $first: "$owner",
+              },
+            },
+          },
+        ],
+      },
+    },
+
+    {},
+  ]);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        user[0].watchHistory,
+        "watch history fetched successfully"
+      )
+    );
 });
 
 export {
@@ -540,4 +626,5 @@ export {
   updateUserAvatar,
   updateUserCoverImage,
   getUserChannelProfile,
+  getWatchHistory,
 };
