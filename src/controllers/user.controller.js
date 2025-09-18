@@ -334,7 +334,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
   //as we used middle-ware (verifyJWT || auth.middleware.js) in route-handling for change-password, we have access to req.user, so we can directly find logged-in user using "req.user._id"
   const user = await User.findById(req.user?._id);
 
-  const isPasswordCorrect = await user.isPasswordCorrect(confirmedPassword);
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
 
   if (!isPasswordCorrect) {
     throw new ApiError(400, "Invalid old password", [
